@@ -38,7 +38,7 @@ const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
 
 export async function carregarCronograma(): Promise<Disparo[]> {
   // Planilha "Cronograma Rodada de Negócios NC2 Spot - 15102026" (primeira aba). Sem gid = primeira aba.
-  const id = process.env.CRONO_SHEET_ID || "1MzZLUd-BcCg-YIxSZ3l7F8qwXoXKklO56njbZKDc9Nw";
+  const id = process.env.CRONO_SHEET_ID || "10GzSArp3xC4ilwjw4ZF5Gm_Or96-5dhCsdrSdMyERQM";
   const gid = process.env.CRONO_SHEET_GID || "";
   const url = process.env.CRONO_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const res = await fetch(url, { cache: "no-store", redirect: "follow" });
