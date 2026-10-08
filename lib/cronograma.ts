@@ -37,8 +37,16 @@ const isoData = (v: string) => {
 const LINK_INVESTIDOR = process.env.LINK_INVESTIDOR || "https://forms.gle/UHxkLakC5uN8JTsd7";
 const comLinks = (t: string) => t.replaceAll("[LINK DE CONFIRMAÇÃO DO INVESTIDOR]", LINK_INVESTIDOR);
 
-// Artes em public/artes, uma por mensagem (m1.jpeg ... m6.jpeg).
+// Artes em PNG em public/artes. Escolhe pelo assunto da mensagem (vale para o layout de 5 ou de 6 mensagens);
+// sem assunto reconhecido, usa a arte do mesmo número (m1.png ... m6.png).
 const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
+function arteDe(codigo: string, nome: string): string | null {
+  const n = norm(nome);
+  if (/entrando no ar|e hoje/.test(n)) return "/artes/m6.png";
+  if (/sem entrada/.test(n)) return "/artes/m5.png";
+  const k = codigo.toLowerCase();
+  return ARTES.has(k) ? `/artes/${k}.png` : null;
+}
 
 export async function carregarCronograma(): Promise<Disparo[]> {
   // Planilha "Cronograma Treinamento NC2 Spot - 15102026", aba gid 950408111 (rodada de negócios).
@@ -88,7 +96,7 @@ export async function carregarCronograma(): Promise<Disparo[]> {
         texto: comLinks(get(r, c.texto)),
         obs: get(r, c.obs),
         status: get(r, c.status),
-        arte: ARTES.has((codigo || "").toLowerCase()) ? `/artes/${(codigo || "").toLowerCase()}.jpeg` : null,
+        arte: arteDe(codigo || "", resto.join(" · ") || msg),
         numeros: {
           enviados: numero(get(r, c.enviados)),
           recebidos: numero(get(r, c.recebidos)),
