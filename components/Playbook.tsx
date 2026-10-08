@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cronograma } from "@/data/cronograma";
 import type { Dados } from "@/lib/analise";
+import type { Disparo } from "@/lib/cronograma";
 import WhatsAppPreview from "./WhatsAppPreview";
 
 type Aba = "painel" | "respostas" | "sintese" | "cronograma";
@@ -20,6 +20,9 @@ const LS_KEY = "treinamento-nc2:envios";
 
 const fmtData = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+// "08/10/2026 às 14:32" (horário de Brasília)
+const fmtDataHora = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(", ", " às ") : "-";
 const fmtDia = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
 
 export default function Playbook() {
@@ -28,6 +31,8 @@ export default function Playbook() {
   const [erro, setErro] = useState<string | null>(null);
   const [envios, setEnvios] = useState<Envios>({});
   const [compartilhado, setCompartilhado] = useState(false);
+  const [cronograma, setCronograma] = useState<Disparo[] | null>(null);
+  const [erroCrono, setErroCrono] = useState<string | null>(null);
   const editando = useRef(false); // não sobrescreve o campo enquanto a pessoa digita
 
   useEffect(() => {
@@ -50,6 +55,17 @@ export default function Playbook() {
     }
   }, []);
 
+  const carregarCrono = useCallback(async () => {
+    try {
+      const r = await fetch("/api/cronograma", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro || "Falha ao carregar o cronograma");
+      setCronograma(j.disparos); setErroCrono(null);
+    } catch (e) {
+      setErroCrono((e as Error).message);
+    }
+  }, []);
+
   const carregarEnvios = useCallback(async () => {
     try {
       const r = await fetch("/api/envios", { cache: "no-store" });
@@ -62,13 +78,13 @@ export default function Playbook() {
 
   // Tempo real: consulta a cada 5s enquanto a aba está visível e atualiza na hora ao voltar para ela.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); } };
-    carregar(); carregarEnvios();
+    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); carregarCrono(); } };
+    carregar(); carregarEnvios(); carregarCrono();
     const t = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("focus", tick);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); window.removeEventListener("focus", tick); };
-  }, [carregar, carregarEnvios]);
+  }, [carregar, carregarEnvios, carregarCrono]);
 
   const persistir = async (id: string, e: Envio, todos: Envios) => {
     if (compartilhado) {
@@ -88,12 +104,12 @@ export default function Playbook() {
     if (gravar) persistir(id, novo, todos);
   };
 
-  const feitos = cronograma.filter((c) => envios[c.id]?.enviado).length;
+  const feitos = (cronograma ?? []).filter((c) => envios[c.id]?.enviado || enviadoNaPlanilha(c)).length;
   const badge: Record<Aba, string> = {
     painel: dados ? String(dados.metricas.inscritos) : "",
     respostas: dados ? String(dados.metricas.respostasBrutas) : "",
     sintese: dados ? String(dados.metricas.comDificuldade) : "",
-    cronograma: `${feitos}/${cronograma.length}`,
+    cronograma: cronograma ? `${feitos}/${cronograma.length}` : "",
   };
   const atual = ABAS.find((a) => a.id === aba)!;
 
@@ -101,8 +117,11 @@ export default function Playbook() {
     <div className="shell">
       <aside className="side">
         <div className="brand">
-          Playbook
-          <small>Treinamento Novo Campeche Spot II</small>
+          <span className="logo">S</span>
+          <div>
+            Playbook
+            <small>Roda Aberta · Novo Campeche Spot II</small>
+          </div>
         </div>
         <nav className="menu">
           {ABAS.map((a, i) => (
@@ -118,7 +137,7 @@ export default function Playbook() {
             <span className={`dot ${erro ? "off" : ""}`} />
             {dados ? `Ao vivo · atualizado às ${new Date(dados.atualizadoEm).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : "Carregando..."}
           </div>
-          <button onClick={() => { carregar(); carregarEnvios(); }}>Atualizar agora</button>
+          <button onClick={() => { carregar(); carregarEnvios(); carregarCrono(); }}>Atualizar agora</button>
           <div className="sub">Quinta-feira, 15/10/2026, às 19h</div>
         </div>
       </aside>
@@ -129,14 +148,15 @@ export default function Playbook() {
       </header>
 
       {erro && <div className="err">{erro}</div>}
+      {aba === "cronograma" && erroCrono && <div className="err">{erroCrono}</div>}
       {dados?.demo && <div className="note">Modo demonstração: dados fictícios (DEMO=1). Remova a variável para ler a planilha real.</div>}
 
       {aba === "cronograma" ? (
-        <Cronograma envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado} />
+        <Cronograma lista={cronograma} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado} />
       ) : !dados ? (
         <div className="empty">Carregando respostas...</div>
       ) : aba === "painel" ? (
-        <Painel d={dados} />
+        <Painel d={dados} verTodas={() => trocar("respostas")} />
       ) : aba === "respostas" ? (
         <Respostas d={dados} />
       ) : (
@@ -147,11 +167,44 @@ export default function Playbook() {
   );
 }
 
+const EVENTO = new Date("2026-10-15T19:00:00-03:00");
+const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const diaBRT = (t: number) => new Date(t - 3 * 3600_000).toISOString().slice(0, 10);
+
+// Relógio só no navegador (evita diferença entre servidor e tela na hidratação).
+function useAgora(ms = 30_000) {
+  const [t, setT] = useState<number | null>(null);
+  useEffect(() => {
+    setT(Date.now());
+    const i = setInterval(() => setT(Date.now()), ms);
+    return () => clearInterval(i);
+  }, [ms]);
+  return t;
+}
+
+function Contagem() {
+  const agora = useAgora();
+  if (agora === null) return <div className="countdown" />;
+  const diff = EVENTO.getTime() - agora;
+  if (agora > EVENTO.getTime() + 3 * 3600_000) return <div className="countdown"><div><b>Encerrado</b><span>obrigado!</span></div></div>;
+  if (diff <= 0) return <div className="countdown live"><div><b>No ar</b><span>agora</span></div></div>;
+  const d = Math.floor(diff / 86_400_000);
+  const h = Math.floor((diff % 86_400_000) / 3_600_000);
+  const m = Math.floor((diff % 3_600_000) / 60_000);
+  return (
+    <div className="countdown" aria-label={`Faltam ${d} dias, ${h} horas e ${m} minutos`}>
+      <div><b>{d}</b><span>dia{d === 1 ? "" : "s"}</span></div>
+      <div><b>{h}</b><span>hora{h === 1 ? "" : "s"}</span></div>
+      <div><b>{m}</b><span>min</span></div>
+    </div>
+  );
+}
+
 function Kpi({ n, l, s }: { n: number | string; l: string; s?: string }) {
   return (
     <div className="card kpi">
-      <div className="n">{n}</div>
       <div className="l">{l}</div>
+      <div className="n">{n}</div>
       {s && <div className="s">{s}</div>}
     </div>
   );
@@ -168,54 +221,118 @@ function Barra({ nome, qtd, total, ok }: { nome: string; qtd: number; total: num
   );
 }
 
-function Painel({ d }: { d: Dados }) {
+// Barra 100% dividida em Sim / Não / Sem resposta, com legenda e números.
+function Divisao({ titulo, sim, nao, total, rotSim, rotNao }: { titulo: string; sim: number; nao: number; total: number; rotSim: string; rotNao: string }) {
+  const sem = Math.max(0, total - sim - nao);
+  const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
+  const partes = [
+    { k: "sim", n: sim, rot: rotSim },
+    { k: "nao", n: nao, rot: rotNao },
+    { k: "sem", n: sem, rot: "Sem resposta" },
+  ].filter((p) => p.n > 0);
+  return (
+    <div className="divisao">
+      <div className="divisao-t">{titulo}</div>
+      <div className="stack" role="img" aria-label={partes.map((p) => `${p.rot}: ${p.n}`).join(", ")}>
+        {total ? partes.map((p) => <i key={p.k} className={p.k} style={{ flexGrow: p.n }} title={`${p.rot}: ${p.n} (${pct(p.n)}%)`} />) : <i className="vazio" />}
+      </div>
+      <div className="legenda">
+        <span><i className="sim" />{rotSim} <b>{sim}</b> <em>{pct(sim)}%</em></span>
+        <span><i className="nao" />{rotNao} <b>{nao}</b> <em>{pct(nao)}%</em></span>
+        {sem > 0 && <span><i className="sem" />Sem resposta <b>{sem}</b></span>}
+      </div>
+    </div>
+  );
+}
+
+function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
   const m = d.metricas;
+  const agora = useAgora();
+  const pctInv = m.inscritos ? Math.round((m.comInvestidor / m.inscritos) * 100) : 0;
+  const hoje = agora ? m.porDia.find((x) => x.dia === diaBRT(agora))?.qtd ?? 0 : 0;
   const maxDia = Math.max(1, ...m.porDia.map((x) => x.qtd));
+  const unicos = d.respostas.filter((r) => !r.duplicado);
+  const ultima = unicos[0]?.ts ?? null;
+  const [ultData, ultHora] = ultima ? fmtDataHora(ultima).split(" às ") : ["", ""];
+
   return (
     <>
-      <div className="grid kpis">
-        <Kpi n={m.inscritos} l="Inscritos (WhatsApp únicos)" s={m.duplicados ? `${m.duplicados} inscrição(ões) repetida(s) descontada(s)` : `${m.respostasBrutas} respostas no Forms`} />
-        <Kpi n={m.jaVenderam} l="Já venderam Spot" s={`${m.nuncaVenderam} nunca venderam`} />
-        <Kpi n={m.comInvestidor} l="Têm investidor para indicar" s={`${m.semInvestidor} sem investidor por ora`} />
-        <Kpi n={m.comDificuldade} l="Contaram sua maior dificuldade" />
+      <section className="hero">
+        <div>
+          <span className="eyebrow"><span className="dot" /> Roda Aberta Seazone</span>
+          <h2>Novo Campeche Spot II + todos os Spots</h2>
+          <p>Quinta-feira, 15/10/2026, às 19h00 · ao vivo</p>
+        </div>
+        <Contagem />
+      </section>
+
+      <div className="hero-kpis">
+        <div className="card big">
+          <div className="big-l">Inscritos</div>
+          <div className="big-n">{m.inscritos}</div>
+          <div className="big-s">
+            {hoje ? <span className="pill">+{hoje} hoje</span> : <span className="pill neutro">nenhum hoje ainda</span>}
+            WhatsApp únicos{m.duplicados ? ` · ${m.duplicados} repetido(s) fora da conta` : ""}
+          </div>
+        </div>
+        <div className="card big destaque">
+          <div className="big-l">Têm cliente para indicar</div>
+          <div className="big-n">{m.comInvestidor}<small>{pctInv}% dos inscritos</small></div>
+          <div className="meter" role="img" aria-label={`${pctInv}% dos inscritos têm cliente para indicar`}><i style={{ width: `${pctInv}%` }} /></div>
+          <div className="big-s">{m.semInvestidor} ainda sem cliente em mente</div>
+        </div>
       </div>
+
+      <div className="grid kpis">
+        <Kpi n={m.jaVenderam} l="Já venderam Spot" s={m.inscritos ? `${Math.round((m.jaVenderam / m.inscritos) * 100)}% dos inscritos` : undefined} />
+        <Kpi n={m.nuncaVenderam} l="Nunca venderam" s="oportunidade de capacitar" />
+        <Kpi n={m.comDificuldade} l="Contaram a maior dificuldade" s="veja a aba Síntese" />
+        <Kpi n={ultHora || "-"} l="Última inscrição" s={ultData || "aguardando a primeira"} />
+      </div>
+
       <div className="grid two">
         <div className="card">
           <h2>Inscrições por dia</h2>
           {m.porDia.length ? (
             <div className="bars">
-              {m.porDia.map((x) => (
-                <div className="bar" key={x.dia}>
-                  <b>{x.qtd}</b>
-                  <i style={{ height: `${(x.qtd / maxDia) * 100}%` }} />
-                  <span>{fmtDia(x.dia)}</span>
-                </div>
-              ))}
+              {m.porDia.map((x) => {
+                const dt = new Date(`${x.dia}T12:00:00-03:00`);
+                return (
+                  <div className="bar" key={x.dia} tabIndex={0}>
+                    <span className="tip">{fmtDia(x.dia)} ({SEMANA[dt.getUTCDay()]}): <b>{x.qtd}</b> inscrição(ões)</span>
+                    <b>{x.qtd}</b>
+                    <i style={{ height: `${(x.qtd / maxDia) * 100}%` }} />
+                    <span>{fmtDia(x.dia)}</span>
+                  </div>
+                );
+              })}
             </div>
           ) : <div className="empty">Ainda sem inscrições.</div>}
         </div>
         <div className="card">
           <h2>Perfil dos inscritos</h2>
-          <Barra nome="Já vendeu Spot" qtd={m.jaVenderam} total={m.inscritos} ok />
-          <Barra nome="Nunca vendeu" qtd={m.nuncaVenderam} total={m.inscritos} />
-          <Barra nome="Tem investidor em mente" qtd={m.comInvestidor} total={m.inscritos} ok />
-          <Barra nome="Sem investidor ainda" qtd={m.semInvestidor} total={m.inscritos} />
+          <Divisao titulo="Têm cliente para indicar?" sim={m.comInvestidor} nao={m.semInvestidor} total={m.inscritos} rotSim="Tem cliente" rotNao="Ainda não" />
+          <Divisao titulo="Já venderam Spot Seazone?" sim={m.jaVenderam} nao={m.nuncaVenderam} total={m.inscritos} rotSim="Já vendeu" rotNao="Nunca vendeu" />
         </div>
       </div>
-      <div className="card" style={{ marginTop: 14 }}>
-        <h2>Últimas inscrições</h2>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-head">
+          <h2>Inscrições recentes</h2>
+          {unicos.length > 8 && <button onClick={verTodas}>Ver todas ({unicos.length})</button>}
+        </div>
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Quando</th><th>Nome</th><th>Já vendeu</th><th>Investidor</th></tr></thead>
+            <thead><tr><th>Data da inscrição</th><th>Nome</th><th>Já vendeu</th><th>Cliente para indicar</th></tr></thead>
             <tbody>
-              {d.respostas.filter((r) => !r.duplicado).slice(0, 6).map((r, i) => (
+              {unicos.slice(0, 8).map((r, i) => (
                 <tr key={i}>
-                  <td>{fmtData(r.ts)}</td><td>{r.nome}</td>
+                  <td className="nowrap">{fmtDataHora(r.ts)}</td><td><b>{r.nome}</b></td>
                   <td><span className={`tag ${r.vendeu ? "sim" : ""}`}>{r.vendeu === null ? "-" : r.vendeu ? "Sim" : "Não"}</span></td>
-                  <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Sim" : "Não"}</span></td>
+                  <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
                 </tr>
               ))}
-              {!d.respostas.length && <tr><td colSpan={4} className="empty">Nenhuma resposta ainda.</td></tr>}
+              {!unicos.length && <tr><td colSpan={4} className="empty">Nenhuma inscrição ainda. Assim que alguém preencher o Forms, aparece aqui em segundos.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -238,15 +355,15 @@ function Respostas({ d }: { d: Dados }) {
       </div>
       <div className="tablewrap">
         <table>
-          <thead><tr><th>Quando</th><th>Nome</th><th>WhatsApp</th><th>Já vendeu</th><th>Investidor</th><th>Maior dificuldade</th></tr></thead>
+          <thead><tr><th>Data da inscrição</th><th>Nome</th><th>WhatsApp</th><th>Já vendeu</th><th>Cliente para indicar</th><th>Maior dificuldade</th></tr></thead>
           <tbody>
             {lista.map((r, i) => (
               <tr key={i}>
-                <td>{fmtData(r.ts)}</td>
+                <td className="nowrap">{fmtDataHora(r.ts)}</td>
                 <td>{r.nome} {r.duplicado && <span className="tag dup">repetido</span>}</td>
                 <td>{r.whatsapp}</td>
                 <td>{r.vendeu === null ? "-" : r.vendeu ? "Sim" : "Não"}</td>
-                <td>{r.investidor === null ? "-" : r.investidor ? "Sim" : "Não"}</td>
+                <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
                 <td>{r.dificuldade}</td>
               </tr>
             ))}
@@ -328,9 +445,14 @@ function Sintese({ d }: { d: Dados }) {
   );
 }
 
-type Disp = (typeof cronograma)[number];
+type Disp = Disparo;
 
-function Cronograma({ envios, atualizar, persistir, editando, compartilhado }: {
+// A planilha manda: "Enviado"/"Disparado" na coluna Status do disparo conta como enviado.
+const enviadoNaPlanilha = (c: Disp) => /enviad|disparad|conclu|feito/.test(c.status.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+const fmtNum = (n: number | null) => (n === null ? "-" : n.toLocaleString("pt-BR"));
+
+function Cronograma({ lista, envios, atualizar, persistir, editando, compartilhado }: {
+  lista: Disp[] | null;
   envios: Envios;
   atualizar: (id: string, patch: Partial<Envio>, gravar?: boolean) => void;
   persistir: (id: string, e: Envio, todos: Envios) => Promise<void>;
@@ -340,16 +462,23 @@ function Cronograma({ envios, atualizar, persistir, editando, compartilhado }: {
   const [copiado, setCopiado] = useState<string | null>(null);
   const [previa, setPrevia] = useState<Disp | null>(null);
   const [nomeEx, setNomeEx] = useState("Maria");
-  const total = cronograma.length;
-  const feitos = cronograma.filter((c) => envios[c.id]?.enviado).length;
-  const pessoas = cronograma.reduce((s, c) => s + (envios[c.id]?.qtd ?? 0), 0);
-  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const agora = useAgora();
+  const hoje = agora ? diaBRT(agora) : "";
+  const itensLista = lista ?? [];
 
   const porDia = useMemo(() => {
     const m = new Map<string, Disp[]>();
-    for (const c of cronograma) m.set(c.data, [...(m.get(c.data) ?? []), c]);
+    for (const c of itensLista) m.set(c.data, [...(m.get(c.data) ?? []), c]);
     return [...m.entries()];
-  }, []);
+  }, [itensLista]);
+
+  if (!lista) return <div className="empty">Carregando cronograma da planilha...</div>;
+
+  const feito = (c: Disp) => !!envios[c.id]?.enviado || enviadoNaPlanilha(c);
+  const total = lista.length;
+  const feitos = lista.filter(feito).length;
+  const pessoas = lista.reduce((s, c) => s + (envios[c.id]?.qtd ?? c.numeros.enviados ?? 0), 0);
+  const proximo = lista.find((c) => !feito(c) && c.data >= hoje);
 
   const copiar = async (c: Disp) => {
     try { await navigator.clipboard.writeText(c.texto); setCopiado(c.id); setTimeout(() => setCopiado(null), 1500); } catch {}
@@ -359,56 +488,83 @@ function Cronograma({ envios, atualizar, persistir, editando, compartilhado }: {
     <>
       {!compartilhado && (
         <div className="note">
-          O check e as quantidades estão salvos só neste navegador. Para compartilhar entre pessoas, configure o Upstash Redis no Vercel (veja o README).
+          <b>Os checks e as quantidades estão salvos só neste navegador.</b> Para todo mundo ver o mesmo, conecte o banco no Vercel: Storage → Upstash Redis → Connect ao projeto → Redeploy.
         </div>
       )}
-      <div className="card">
-        <Barra nome={`Disparos enviados (${feitos} de ${total})`} qtd={feitos} total={total} ok />
-        <div className="sub">Soma de pessoas que receberam, nos disparos preenchidos: <strong>{pessoas.toLocaleString("pt-BR")}</strong></div>
+      <div className="grid kpis" style={{ marginTop: 0 }}>
+        <div className="card kpi">
+          <div className="l">Disparos feitos</div>
+          <div className="n">{feitos}<span className="de"> de {total}</span></div>
+          <div className="meter ok" style={{ marginTop: 8 }}><i style={{ width: `${total ? (feitos / total) * 100 : 0}%` }} /></div>
+        </div>
+        <Kpi n={pessoas.toLocaleString("pt-BR")} l="Pessoas que receberam" s="soma dos disparos preenchidos" />
+        <Kpi n={proximo ? `${fmtDia(proximo.data)} · ${proximo.horario}` : "-"} l="Próximo disparo" s={proximo ? `${proximo.mensagem} · ${proximo.base}` : "nenhum pendente"} />
       </div>
+      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Treinamento NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
+
       {porDia.map(([data, itens]) => (
         <div key={data}>
           <div className="dia">
             {fmtDia(data)}/{data.slice(0, 4)} · {itens[0].dia}
-            {data === hoje && <span className="tag sim">hoje</span>}
+            {data === hoje && <span className="tag hoje">hoje</span>}
             <small>{itens.length} disparo(s)</small>
           </div>
           {itens.map((c) => {
             const e = envios[c.id];
+            const naPlanilha = enviadoNaPlanilha(c);
+            const done = !!e?.enviado || naPlanilha;
+            const n = c.numeros;
+            const temNumeros = Object.values(n).some((v) => v !== null);
             return (
-              <div key={c.id} className={`card disp ${e?.enviado ? "done" : ""}`}>
-                <input type="checkbox" checked={!!e?.enviado} onChange={(ev) => atualizar(c.id, { enviado: ev.target.checked })} aria-label="Marcar como enviado" />
-                <div>
+              <div key={c.id} className={`card disp ${done ? "done" : ""}`}>
+                <input
+                  type="checkbox" checked={done} disabled={naPlanilha}
+                  title={naPlanilha ? "Marcado como enviado na planilha" : "Marcar como enviado"}
+                  onChange={(ev) => atualizar(c.id, { enviado: ev.target.checked })} aria-label="Marcar como enviado"
+                />
+                <div style={{ minWidth: 0 }}>
                   <div className="meta">
                     <strong>{c.mensagem} · {c.nome}</strong>
-                    <span className="tag">{fmtDia(c.data)}/{c.data.slice(0, 4)} · {c.dia}</span>
                     <span className="tag">{c.horario}</span>
                     <span className="tag">{c.base}</span>
                     <span className="tag">{c.tipo}</span>
-                    {e?.enviado && <span className="tag sim">enviado {fmtData(e.em)}</span>}
+                    {done
+                      ? <span className="tag sim">enviado{e?.em ? ` ${fmtData(e.em)}` : ""}</span>
+                      : c.status && <span className="tag">{c.status}</span>}
                   </div>
-                  <div className="sub">{c.gancho}{c.obs ? ` · ${c.obs}` : ""}</div>
+                  <div className="sub"><b>Gancho:</b> {c.gancho}{c.objetivo ? <> · <b>Objetivo:</b> {c.objetivo}</> : null}</div>
+                  {c.obs && <div className="sub">⚠️ {c.obs}</div>}
                   <div className="msg">{c.texto}</div>
+                  {temNumeros && (
+                    <div className="nums">
+                      <span>Enviados <b>{fmtNum(n.enviados)}</b></span>
+                      <span>Recebidos <b>{fmtNum(n.recebidos)}</b></span>
+                      <span>Lidos <b>{fmtNum(n.lidos)}</b></span>
+                      <span>Cliques <b>{fmtNum(n.cliques)}</b></span>
+                      <span>Inscritos <b>{fmtNum(n.inscritos)}</b></span>
+                    </div>
+                  )}
                 </div>
                 <div className="acts">
+                  <button className="primary" onClick={() => copiar(c)}>{copiado === c.id ? "Copiado ✓" : "Copiar mensagem"}</button>
+                  <button className="wa-btn" onClick={() => setPrevia(c)}>Ver no WhatsApp</button>
                   <label className="qtd">
                     Pessoas que receberam
                     <input
-                      type="number" min={0} inputMode="numeric" placeholder="0"
+                      type="number" min={0} inputMode="numeric" placeholder={n.enviados !== null ? String(n.enviados) : "0"}
                       value={e?.qtd ?? ""}
                       onFocus={() => { editando.current = true; }}
                       onChange={(ev) => atualizar(c.id, { qtd: ev.target.value === "" ? null : Math.max(0, Number(ev.target.value)) }, false)}
                       onBlur={() => { editando.current = false; const atual = envios[c.id]; if (atual) persistir(c.id, atual, envios); }}
                     />
                   </label>
-                  <button className="primary" onClick={() => copiar(c)}>{copiado === c.id ? "Copiado" : "Copiar mensagem"}</button>
-                  <button className="wa-btn" onClick={() => setPrevia(c)}>Ver no WhatsApp</button>
                 </div>
               </div>
             );
           })}
         </div>
       ))}
+      {!lista.length && <div className="empty">A planilha do cronograma está sem disparos.</div>}
       {previa && (
         <WhatsAppPreview
           texto={previa.texto} horario={previa.horario} nome={nomeEx} setNome={setNomeEx}

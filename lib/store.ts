@@ -1,6 +1,7 @@
 // Guarda o "check de enviado". Compartilhado via Upstash Redis (REST) quando configurado.
-const URL_ = process.env.UPSTASH_REDIS_REST_URL;
-const TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+// O Upstash do Marketplace do Vercel cria KV_REST_API_*; a conta direta no Upstash usa UPSTASH_REDIS_REST_*.
+const URL_ = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const KEY = "treinamento-nc2:envios";
 
 export type Envio = { enviado: boolean; em: string | null; qtd: number | null };

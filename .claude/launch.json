@@ -1,6 +1,23 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "playbook", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3100 }
+    {
+      "name": "playbook",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "playbook-demo",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set DEMO=1&& npx next dev -p 3101"
+      ],
+      "port": 3101
+    }
   ]
 }

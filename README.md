@@ -34,4 +34,5 @@ Abre em http://localhost:3100. Para ver com dados fictícios, crie `.env.local` 
 - Colunas são achadas pelo texto do cabeçalho (Carimbo, Nome, WhatsApp, vendeu, investidor, dificuldade), então reordenar o Forms não quebra.
 - Inscrito único = WhatsApp canônico (sem 55 e sem 9º dígito). Repetidos aparecem na aba Respostas, mas não entram na contagem.
 - Síntese: não há categorias pré-definidas. As respostas da pergunta de dificuldade são agrupadas só quando são iguais (sem diferenciar maiúsculas, acentos e pontuação) e cada grupo mostra o texto que o parceiro escreveu.
-- Cronograma: edite `data/cronograma.ts` para mudar datas, bases ou textos.
+- Cronograma: lido ao vivo da planilha "Cronograma Treinamento NC2 Spot - 15102026" (aba gid 855533029). Mude datas, textos ou status lá. Status "Enviado" na planilha já marca o disparo como enviado. `data/cronograma.ts` não é mais usado.
+- Banco do check/quantidade: aceita `UPSTASH_REDIS_REST_URL/TOKEN` ou `KV_REST_API_URL/TOKEN` (nomes criados pelo Upstash do Marketplace do Vercel).
