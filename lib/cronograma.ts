@@ -41,9 +41,9 @@ const comLinks = (t: string) => t.replaceAll("[LINK DE CONFIRMAÇÃO DO INVESTID
 const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
 
 export async function carregarCronograma(): Promise<Disparo[]> {
-  // Planilha "Cronograma Rodada de Negócios NC2 Spot - 15102026" (primeira aba). Sem gid = primeira aba.
-  const id = process.env.CRONO_SHEET_ID || "1_PMEsP942-1vzfMQbgjOxsleFqILp5JY8Eny2MOMuiQ";
-  const gid = process.env.CRONO_SHEET_GID || "";
+  // Planilha "Cronograma Treinamento NC2 Spot - 15102026", aba gid 950408111 (rodada de negócios).
+  const id = process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k";
+  const gid = process.env.CRONO_SHEET_GID || "950408111";
   const url = process.env.CRONO_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const res = await fetch(url, { cache: "no-store", redirect: "follow" });
   const txt = await res.text();

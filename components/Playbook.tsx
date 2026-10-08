@@ -505,7 +505,7 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
         <Kpi n={pessoas.toLocaleString("pt-BR")} l="Pessoas que receberam" s="soma dos disparos preenchidos" />
         <Kpi n={proximo ? `${fmtDia(proximo.data)} · ${proximo.horario}` : "-"} l="Próximo disparo" s={proximo ? `${proximo.mensagem} · ${proximo.base}` : "nenhum pendente"} />
       </div>
-      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Rodada de Negócios NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
+      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Treinamento NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
 
       {porDia.map(([data, itens]) => (
         <div key={data}>
