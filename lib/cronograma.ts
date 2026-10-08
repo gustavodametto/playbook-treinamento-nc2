@@ -33,6 +33,10 @@ const isoData = (v: string) => {
   return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : (v || "").trim();
 };
 
+// Link de confirmação do investidor (bloco B das mensagens). Se a planilha ainda tiver o marcador, o site já troca.
+const LINK_INVESTIDOR = process.env.LINK_INVESTIDOR || "https://forms.gle/UHxkLakC5uN8JTsd7";
+const comLinks = (t: string) => t.replaceAll("[LINK DE CONFIRMAÇÃO DO INVESTIDOR]", LINK_INVESTIDOR);
+
 // Artes em public/artes, uma por mensagem (m1.jpeg ... m6.jpeg).
 const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
 
@@ -81,7 +85,7 @@ export async function carregarCronograma(): Promise<Disparo[]> {
         nome: resto.join(" · ") || msg,
         gancho: get(r, c.gancho),
         objetivo: get(r, c.objetivo),
-        texto: get(r, c.texto),
+        texto: comLinks(get(r, c.texto)),
         obs: get(r, c.obs),
         status: get(r, c.status),
         arte: ARTES.has((codigo || "").toLowerCase()) ? `/artes/${(codigo || "").toLowerCase()}.jpeg` : null,
