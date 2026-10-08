@@ -6,7 +6,7 @@ import { createClient } from "redis";
 // - Upstash (REST): UPSTASH_REDIS_REST_URL/TOKEN ou KV_REST_API_URL/TOKEN
 const REST_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-const REDIS_URL = process.env.REDIS_URL || process.env.KV_URL;
+const REDIS_URL = process.env.REDIS_URL || process.env.STORAGE_URL || process.env.KV_URL;
 const KEY = "treinamento-nc2:envios";
 
 export type Envio = { enviado: boolean; em: string | null; qtd: number | null };
