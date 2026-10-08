@@ -449,6 +449,9 @@ type Disp = Disparo;
 
 // A planilha manda: "Enviado"/"Disparado" na coluna Status do disparo conta como enviado.
 const enviadoNaPlanilha = (c: Disp) => /enviad|disparad|conclu|feito/.test(c.status.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+// Mensagens de 2 blocos: o que vem abaixo desta linha é o texto pronto para o investidor.
+const SEP_BLOCO = "━━━━━━━━━━━━";
+const blocoInvestidor = (t: string) => (t.includes(SEP_BLOCO) ? t.split(SEP_BLOCO).slice(1).join(SEP_BLOCO).trim() : null);
 const fmtNum = (n: number | null) => (n === null ? "-" : n.toLocaleString("pt-BR"));
 
 function Cronograma({ lista, envios, atualizar, persistir, editando, compartilhado }: {
@@ -480,8 +483,10 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
   const pessoas = lista.reduce((s, c) => s + (envios[c.id]?.qtd ?? c.numeros.enviados ?? 0), 0);
   const proximo = lista.find((c) => !feito(c) && c.data >= hoje);
 
-  const copiar = async (c: Disp) => {
-    try { await navigator.clipboard.writeText(c.texto); setCopiado(c.id); setTimeout(() => setCopiado(null), 1500); } catch {}
+  const copiar = async (c: Disp, so: "tudo" | "investidor" = "tudo") => {
+    const txt = so === "investidor" ? blocoInvestidor(c.texto) ?? c.texto : c.texto;
+    const chave = `${c.id}:${so}`;
+    try { await navigator.clipboard.writeText(txt); setCopiado(chave); setTimeout(() => setCopiado(null), 1500); } catch {}
   };
 
   return (
@@ -549,7 +554,12 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
                   )}
                 </div>
                 <div className="acts">
-                  <button className="primary" onClick={() => copiar(c)}>{copiado === c.id ? "Copiado ✓" : "Copiar mensagem"}</button>
+                  <button className="primary" onClick={() => copiar(c)}>{copiado === `${c.id}:tudo` ? "Copiado ✓" : "Copiar mensagem"}</button>
+                  {blocoInvestidor(c.texto) && (
+                    <button onClick={() => copiar(c, "investidor")} title="Copia só o texto abaixo da linha, que o parceiro encaminha">
+                      {copiado === `${c.id}:investidor` ? "Copiado ✓" : "Copiar texto do investidor"}
+                    </button>
+                  )}
                   <button className="wa-btn" onClick={() => setPrevia(c)}>Ver no WhatsApp</button>
                   <label className="qtd">
                     Pessoas que receberam
