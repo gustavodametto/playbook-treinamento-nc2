@@ -16,6 +16,7 @@ export type Disparo = {
   texto: string;
   obs: string;
   status: string; // "Status do disparo" da planilha
+  arte: string | null; // /artes/mN.jpeg quando existe arte para a mensagem
   numeros: { enviados: number | null; recebidos: number | null; lidos: number | null; cliques: number | null; inscritos: number | null };
 };
 
@@ -32,10 +33,14 @@ const isoData = (v: string) => {
   return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : (v || "").trim();
 };
 
+// Artes em public/artes, uma por mensagem (m1.jpeg ... m6.jpeg).
+const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
+
 export async function carregarCronograma(): Promise<Disparo[]> {
-  const id = process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k";
-  const gid = process.env.CRONO_SHEET_GID || "855533029";
-  const url = process.env.CRONO_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  // Planilha "Cronograma Rodada de Negócios NC2 Spot - 15102026" (primeira aba). Sem gid = primeira aba.
+  const id = process.env.CRONO_SHEET_ID || "1MzZLUd-BcCg-YIxSZ3l7F8qwXoXKklO56njbZKDc9Nw";
+  const gid = process.env.CRONO_SHEET_GID || "";
+  const url = process.env.CRONO_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const res = await fetch(url, { cache: "no-store", redirect: "follow" });
   const txt = await res.text();
   if (!res.ok || /^\s*<(!doctype|html)/i.test(txt)) {
@@ -50,7 +55,7 @@ export async function carregarCronograma(): Promise<Disparo[]> {
     data: col(/^data$/), dia: col(/^dia$/), horario: col(/horario|hora/), base: col(/^base/), tipo: col(/^tipo/),
     mensagem: col(/^mensagem$/), gancho: col(/gancho/), objetivo: col(/objetivo/), texto: col(/whatsapp|copiar/),
     enviados: col(/^enviados/), recebidos: col(/^recebidos/), lidos: col(/^lidos/), cliques: col(/clique/),
-    inscritos: col(/^inscritos/), obs: col(/observa/), status: col(/status/),
+    inscritos: col(/^inscritos/), obs: col(/observa/), status: col(/status/), arte: col(/^arte/),
   };
   const get = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
 
@@ -79,6 +84,7 @@ export async function carregarCronograma(): Promise<Disparo[]> {
         texto: get(r, c.texto),
         obs: get(r, c.obs),
         status: get(r, c.status),
+        arte: ARTES.has((codigo || "").toLowerCase()) ? `/artes/${(codigo || "").toLowerCase()}.jpeg` : null,
         numeros: {
           enviados: numero(get(r, c.enviados)),
           recebidos: numero(get(r, c.recebidos)),

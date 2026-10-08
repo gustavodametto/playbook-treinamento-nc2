@@ -120,7 +120,7 @@ export default function Playbook() {
           <span className="logo">S</span>
           <div>
             Playbook
-            <small>Roda Aberta · Novo Campeche Spot II</small>
+            <small>Rodada de Negócios · Novo Campeche Spot II</small>
           </div>
         </div>
         <nav className="menu">
@@ -259,9 +259,9 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
     <>
       <section className="hero">
         <div>
-          <span className="eyebrow"><span className="dot" /> Roda Aberta Seazone</span>
-          <h2>Novo Campeche Spot II + todos os Spots</h2>
-          <p>Quinta-feira, 15/10/2026, às 19h00 · ao vivo</p>
+          <span className="eyebrow"><span className="dot" /> Rodada de negócios · ao vivo</span>
+          <h2>Novo Campeche Spot II</h2>
+          <p>Quinta-feira, 15/10/2026, às 19h00 · 10 studios com condição que só existe durante a live</p>
         </div>
         <Contagem />
       </section>
@@ -500,7 +500,7 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
         <Kpi n={pessoas.toLocaleString("pt-BR")} l="Pessoas que receberam" s="soma dos disparos preenchidos" />
         <Kpi n={proximo ? `${fmtDia(proximo.data)} · ${proximo.horario}` : "-"} l="Próximo disparo" s={proximo ? `${proximo.mensagem} · ${proximo.base}` : "nenhum pendente"} />
       </div>
-      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Treinamento NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
+      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Rodada de Negócios NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
 
       {porDia.map(([data, itens]) => (
         <div key={data}>
@@ -534,7 +534,10 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
                   </div>
                   <div className="sub"><b>Gancho:</b> {c.gancho}{c.objetivo ? <> · <b>Objetivo:</b> {c.objetivo}</> : null}</div>
                   {c.obs && <div className="sub">⚠️ {c.obs}</div>}
-                  <div className="msg">{c.texto}</div>
+                  <div className="msg-wrap">
+                    {c.arte && <a href={c.arte} target="_blank" rel="noreferrer" className="arte" title="Abrir a arte em tamanho real"><img src={c.arte} alt={`Arte da ${c.mensagem}`} /></a>}
+                    <div className="msg">{c.texto}</div>
+                  </div>
                   {temNumeros && (
                     <div className="nums">
                       <span>Enviados <b>{fmtNum(n.enviados)}</b></span>
@@ -567,7 +570,7 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
       {!lista.length && <div className="empty">A planilha do cronograma está sem disparos.</div>}
       {previa && (
         <WhatsAppPreview
-          texto={previa.texto} horario={previa.horario} nome={nomeEx} setNome={setNomeEx}
+          texto={previa.texto} arte={previa.arte} horario={previa.horario} nome={nomeEx} setNome={setNomeEx}
           titulo={`${previa.mensagem} · ${fmtDia(previa.data)} · ${previa.base}`}
           fechar={() => setPrevia(null)}
         />

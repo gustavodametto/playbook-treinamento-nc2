@@ -24,8 +24,9 @@ function comPlaceholders(texto: string): ReactNode[] {
   );
 }
 
-export default function WhatsAppPreview({ texto, nome, setNome, horario, titulo, fechar }: {
+export default function WhatsAppPreview({ texto, arte, nome, setNome, horario, titulo, fechar }: {
   texto: string;
+  arte?: string | null;
   nome: string;
   setNome: (n: string) => void;
   horario: string;
@@ -63,7 +64,8 @@ export default function WhatsAppPreview({ texto, nome, setNome, horario, titulo,
           </div>
           <div className="wa-chat">
             <div className="wa-day">HOJE</div>
-            <div className="wa-bubble">
+            <div className={`wa-bubble ${arte ? "com-arte" : ""}`}>
+              {arte && <img className="wa-img" src={arte} alt="Arte enviada junto com a mensagem" />}
               {comPlaceholders(msg)}
               <span className="wa-time">{hora}</span>
             </div>

@@ -5,7 +5,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], variable: "--font-jakarta" });
 
 export const metadata: Metadata = {
-  title: "Playbook Treinamento NC2",
+  title: "Playbook Rodada de Negócios NC2",
   description: "Painel de inscrições, síntese de dificuldades e cronograma de disparos do treinamento Novo Campeche Spot II.",
 };
 
