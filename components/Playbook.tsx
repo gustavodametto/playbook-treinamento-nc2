@@ -5,7 +5,7 @@ import type { Dados } from "@/lib/analise";
 import type { Disparo } from "@/lib/cronograma";
 import WhatsAppPreview from "./WhatsAppPreview";
 
-type Aba = "painel" | "respostas" | "sintese" | "cronograma";
+type Aba = "painel" | "respostas" | "sintese" | "cronograma" | "premium";
 type Envio = { enviado: boolean; em: string | null; qtd: number | null };
 type Envios = Record<string, Envio>;
 type Lista = "pool" | "premium";
@@ -16,6 +16,7 @@ const ABAS: { id: Aba; nome: string }[] = [
   { id: "respostas", nome: "Respostas" },
   { id: "sintese", nome: "Síntese das dificuldades" },
   { id: "cronograma", nome: "Cronograma de disparos" },
+  { id: "premium", nome: "Cronograma Premium" },
 ];
 const LISTAS: { id: Lista; nome: string }[] = [
   { id: "pool", nome: "Pool" },
@@ -39,17 +40,17 @@ export default function Playbook() {
   const [envios, setEnvios] = useState<Envios>({});
   const [compartilhado, setCompartilhado] = useState(false);
   const [fontes, setFontes] = useState<Record<Lista, Fonte>>({ pool: VAZIO, premium: VAZIO });
-  const [lista, setLista] = useState<Lista>("pool");
   const editando = useRef(false); // não sobrescreve o campo enquanto a pessoa digita
   const migrado = useRef(false);
 
   useEffect(() => {
     const h = window.location.hash.replace("#", "");
-    if (h === "premium") { setAba("cronograma"); setLista("premium"); return; }
     if (ABAS.some((a) => a.id === h)) setAba(h as Aba);
   }, []);
   const trocar = (a: Aba) => { setAba(a); window.history.replaceState(null, "", `#${a}`); };
-  const trocarLista = (l: Lista) => { setLista(l); window.history.replaceState(null, "", l === "premium" ? "#premium" : "#cronograma"); };
+  // O botão Pool | Premium e o menu lateral apontam para a mesma coisa.
+  const lista: Lista = aba === "premium" ? "premium" : "pool";
+  const trocarLista = (l: Lista) => trocar(l === "premium" ? "premium" : "cronograma");
 
   const carregar = useCallback(async () => {
     try {
@@ -142,6 +143,7 @@ export default function Playbook() {
     respostas: dados ? String(dados.metricas.respostasBrutas) : "",
     sintese: dados ? String(dados.metricas.comDificuldade) : "",
     cronograma: contagem("pool"),
+    premium: contagem("premium"),
   };
   const atualFonte = fontes[lista];
   const atual = ABAS.find((a) => a.id === aba)!;
@@ -181,11 +183,11 @@ export default function Playbook() {
       </header>
 
       {erro && <div className="err">{erro}</div>}
-      {aba === "cronograma" && atualFonte.erro && <div className="err">{atualFonte.erro}</div>}
-      {aba === "cronograma" && atualFonte.aviso && <div className="note">{atualFonte.aviso}</div>}
+      {(aba === "cronograma" || aba === "premium") && atualFonte.erro && <div className="err">{atualFonte.erro}</div>}
+      {(aba === "cronograma" || aba === "premium") && atualFonte.aviso && <div className="note">{atualFonte.aviso}</div>}
       {dados?.demo && <div className="note">Modo demonstração: dados fictícios (DEMO=1). Remova a variável para ler a planilha real.</div>}
 
-      {aba === "cronograma" ? (
+      {aba === "cronograma" || aba === "premium" ? (
         <>
           <div className="chips listas" role="tablist" aria-label="Qual cronograma">
             {LISTAS.map((l) => (
