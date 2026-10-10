@@ -7,6 +7,7 @@ export type Resposta = {
   investidor: boolean | null;
   dificuldade: string;
   duplicado: boolean;
+  farmer?: string | null; // farmer responsável (Nekt), pelo telefone
 };
 
 export type Tema = { id: string; titulo: string; qtd: number; pct: number; exemplos: string[] };
@@ -28,6 +29,7 @@ export type Dados = {
   };
   temas: Tema[];
   sintese: { texto: string | null; origem: "ia" | "temas" | "vazio" };
+  farmersAtualizadoEm?: string;
 };
 
 // Chave canônica de telefone BR: sem 55 e sem o 9º dígito (evita contar a mesma pessoa duas vezes).

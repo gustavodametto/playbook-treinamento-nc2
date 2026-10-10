@@ -3,6 +3,7 @@ import {
   Dados, linhasParaRespostas, montarMetricas, montarTemas, textoSinteseTemas, Resposta,
 } from "./analise";
 import { sinteseIA } from "./sintese-ia";
+import { farmerDe, farmersAtualizadoEm } from "./farmers";
 
 const DEMO_CSV = `Carimbo de data/hora,Seu nome,WhatsApp (com DDD),Você já vendeu Spots Seazone?,Você tem algum investidor em mente para indicar?,Qual a sua maior dificuldade na hora de vender?
 08/10/2026 10:12:03,Ana Souza,(48) 99911-2233,Sim,Sim,Contornar o "vou pensar" do cliente
@@ -17,10 +18,18 @@ async function baixarCsv(): Promise<string> {
   if (process.env.DEMO === "1") return DEMO_CSV;
   const id = process.env.SHEET_ID || "1YjRi_2b3R_ZR7YbRX3Ir5KUll9AFrW-87HPhouDsa50";
   const gid = process.env.SHEET_GID || "298661079";
-  const url = process.env.SHEET_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
-  const res = await fetch(url, { cache: "no-store", redirect: "follow" });
-  const txt = await res.text();
-  if (!res.ok || /^\s*<(!doctype|html)/i.test(txt)) {
+  // Export CSV primeiro: o gviz descarta valores "fora do tipo" da coluna (ex.: "(48) 9..." no meio de números) e o WhatsApp vinha vazio.
+  const urls = process.env.SHEET_CSV_URL
+    ? [process.env.SHEET_CSV_URL]
+    : [`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`];
+  let res: Response | null = null;
+  let txt = "";
+  for (const url of urls) {
+    res = await fetch(url, { cache: "no-store", redirect: "follow" });
+    txt = await res.text();
+    if (res.ok && !/^\s*<(!doctype|html)/i.test(txt)) break;
+  }
+  if (!res || !res.ok || /^\s*<(!doctype|html)/i.test(txt)) {
     throw new Error(
       "Não consegui ler a planilha. Em Compartilhar, deixe \"Qualquer pessoa com o link: Leitor\" (ou use Arquivo > Compartilhar > Publicar na Web e informe SHEET_CSV_URL)."
     );
@@ -30,7 +39,7 @@ async function baixarCsv(): Promise<string> {
 
 export async function carregarDados(): Promise<Dados> {
   const demo = process.env.DEMO === "1";
-  const respostas: Resposta[] = linhasParaRespostas(parseCsv(await baixarCsv()));
+  const respostas: Resposta[] = linhasParaRespostas(parseCsv(await baixarCsv())).map((r) => ({ ...r, farmer: farmerDe(r.chave) }));
   const metricas = montarMetricas(respostas);
   const temas = montarTemas(respostas);
   const textosDif = respostas.filter((r) => !r.duplicado && r.dificuldade.trim()).map((r) => r.dificuldade.trim());
@@ -42,5 +51,5 @@ export async function carregarDados(): Promise<Dados> {
       ? { texto: ia, origem: "ia" }
       : { texto: textoSinteseTemas(temas, textosDif.length), origem: "temas" };
   }
-  return { atualizadoEm: new Date().toISOString(), demo, respostas, metricas, temas, sintese };
+  return { atualizadoEm: new Date().toISOString(), demo, respostas, metricas, temas, sintese, farmersAtualizadoEm };
 }

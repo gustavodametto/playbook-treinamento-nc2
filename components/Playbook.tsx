@@ -298,6 +298,9 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
   const hoje = agora ? m.porDia.find((x) => x.dia === diaBRT(agora))?.qtd ?? 0 : 0;
   const maxDia = Math.max(1, ...m.porDia.map((x) => x.qtd));
   const unicos = d.respostas.filter((r) => !r.duplicado);
+  const porFarmer = Object.entries(unicos.reduce<Record<string, number>>((acc, r) => {
+    const f = farmerTxt(r); acc[f] = (acc[f] ?? 0) + 1; return acc;
+  }, {})).sort((a, b) => (a[0] === SEM_FARMER ? 1 : b[0] === SEM_FARMER ? -1 : b[1] - a[1]));
   const ultima = unicos[0]?.ts ?? null;
   const [ultData, ultHora] = ultima ? fmtDataHora(ultima).split(" às ") : ["", ""];
 
@@ -363,6 +366,12 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
+        <h2>Inscritos por farmer</h2>
+        {porFarmer.length ? porFarmer.map(([f, n]) => <Barra key={f} nome={f} qtd={n} total={unicos.length} ok={f !== SEM_FARMER} />)
+          : <div className="empty">Ainda sem inscrições.</div>}
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
         <div className="card-head">
           <h2>Inscrições recentes</h2>
           {unicos.length > 8 && <button onClick={verTodas}>Ver todas ({unicos.length})</button>}
@@ -387,33 +396,65 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
   );
 }
 
+const SEM_FARMER = "Sem farmer encontrado";
+const farmerTxt = (r: Dados["respostas"][number]) => r.farmer || SEM_FARMER;
+
+// Exporta exatamente o que está na tela (busca e filtro aplicados). CSV com ";" e BOM abre direto no Excel em português.
+function exportarRespostas(lista: Dados["respostas"]) {
+  const sn = (v: boolean | null) => (v === null ? "" : v ? "Sim" : "Não");
+  const cab = ["Data da inscrição", "Nome", "WhatsApp", "Farmer", "Já vendeu", "Cliente para indicar", "Maior dificuldade", "Repetido"];
+  const linhas = lista.map((r) => [fmtDataHora(r.ts), r.nome, r.whatsapp, farmerTxt(r), sn(r.vendeu), sn(r.investidor), r.dificuldade, r.duplicado ? "Sim" : ""]);
+  const q = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = "\uFEFF" + [cab, ...linhas].map((l) => l.map(q).join(";")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `respostas-forms-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function Respostas({ d }: { d: Dados }) {
   const [q, setQ] = useState("");
+  const [farmer, setFarmer] = useState("todos");
+  const farmers = useMemo(() => [...new Set(d.respostas.map(farmerTxt))].sort((a, b) => a.localeCompare(b, "pt-BR")), [d]);
   const lista = useMemo(() => {
     const n = q.toLowerCase();
-    return d.respostas.filter((r) => !n || `${r.nome} ${r.whatsapp} ${r.dificuldade}`.toLowerCase().includes(n));
-  }, [d, q]);
+    return d.respostas.filter((r) =>
+      (farmer === "todos" || farmerTxt(r) === farmer) &&
+      (!n || `${r.nome} ${r.whatsapp} ${r.dificuldade} ${farmerTxt(r)}`.toLowerCase().includes(n)));
+  }, [d, q, farmer]);
   return (
     <div className="card">
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+      <div className="filtros" style={{ alignItems: "center", marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>Respostas do Forms ({lista.length})</h2>
-        <input type="search" placeholder="Buscar por nome, WhatsApp ou dificuldade" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input type="search" placeholder="Buscar por nome, WhatsApp, farmer ou dificuldade" value={q} onChange={(e) => setQ(e.target.value)} />
+        <label>
+          Farmer
+          <select value={farmer} onChange={(e) => setFarmer(e.target.value)}>
+            <option value="todos">Todos</option>
+            {farmers.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </label>
+        <button className="primary" onClick={() => exportarRespostas(lista)} disabled={!lista.length}>Exportar ({lista.length})</button>
       </div>
+      {d.farmersAtualizadoEm && <div className="sub" style={{ marginBottom: 8 }}>Farmer vem do Nekt (Farmer Parcerias no Pipedrive ou executivo do portal), atualizado em {fmtDataHora(d.farmersAtualizadoEm)}.</div>}
       <div className="tablewrap">
         <table>
-          <thead><tr><th>Data da inscrição</th><th>Nome</th><th>WhatsApp</th><th>Já vendeu</th><th>Cliente para indicar</th><th>Maior dificuldade</th></tr></thead>
+          <thead><tr><th>Data da inscrição</th><th>Nome</th><th>WhatsApp</th><th>Farmer</th><th>Já vendeu</th><th>Cliente para indicar</th><th>Maior dificuldade</th></tr></thead>
           <tbody>
             {lista.map((r, i) => (
               <tr key={i}>
                 <td className="nowrap">{fmtDataHora(r.ts)}</td>
                 <td>{r.nome} {r.duplicado && <span className="tag dup">repetido</span>}</td>
                 <td>{r.whatsapp}</td>
+                <td>{r.farmer ? r.farmer : <span className="tag">não encontrado</span>}</td>
                 <td>{r.vendeu === null ? "-" : r.vendeu ? "Sim" : "Não"}</td>
                 <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
                 <td>{r.dificuldade}</td>
               </tr>
             ))}
-            {!lista.length && <tr><td colSpan={6} className="empty">Nada por aqui ainda.</td></tr>}
+            {!lista.length && <tr><td colSpan={7} className="empty">Nada por aqui ainda.</td></tr>}
           </tbody>
         </table>
       </div>
