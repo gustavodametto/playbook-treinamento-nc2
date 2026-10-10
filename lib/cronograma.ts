@@ -49,31 +49,53 @@ function arteDe(codigo: string, nome: string): string | null {
   return ARTES.has(k) ? `/artes/${k}.png` : null;
 }
 
-export type Lista = "geral" | "premium";
+export type Lista = "pool" | "premium";
 
-// Planilha "Cronograma Treinamento NC2 Spot - 15102026". Geral = aba gid 950408111 (rodada de negócios).
-// Premium = aba definida em CRONO_PREMIUM_GID; enquanto não existir, usa o CSV embutido em data/cronograma-premium.ts.
-const PLANILHA = process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k";
-const GID_PREMIUM = process.env.CRONO_PREMIUM_GID || "";
+// De onde vem cada cronograma (sobrescreva por variável de ambiente no Vercel, se mudar de aba).
+// Pool = "Cronograma Treinamento NC2 Spot - 15102026", aba gid 531412351.
+// Premium = planilha própria, aba gid 1951678217. Se ela não abrir (sem compartilhamento), usa o CSV embutido em data/cronograma-premium.ts.
+const FONTES: Record<Lista, { planilha: string; gid: string; url?: string; nome: string }> = {
+  pool: {
+    planilha: process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k",
+    gid: process.env.CRONO_SHEET_GID || "531412351",
+    url: process.env.CRONO_CSV_URL,
+    nome: "Cronograma Treinamento NC2 Spot · aba Pool",
+  },
+  premium: {
+    planilha: process.env.CRONO_PREMIUM_SHEET_ID || "1Z7tQbT7Q2WetBKstF77tItS-SpwrLjxDnnndIOdWYd8",
+    gid: process.env.CRONO_PREMIUM_GID || "1951678217",
+    url: process.env.CRONO_PREMIUM_CSV_URL,
+    nome: "Cronograma Premium",
+  },
+};
 
-export const fonteDe = (lista: Lista) =>
-  lista === "premium" && !GID_PREMIUM && !process.env.CRONO_PREMIUM_CSV_URL ? "embutido" : "planilha";
+const ERRO_ACESSO = "Não consegui ler a planilha do cronograma. Em Compartilhar, deixe \"Qualquer pessoa com o link: Leitor\".";
 
-async function baixarCsv(lista: Lista): Promise<string> {
-  if (lista === "premium" && !GID_PREMIUM && !process.env.CRONO_PREMIUM_CSV_URL) return CSV_PREMIUM;
-  const gid = lista === "premium" ? GID_PREMIUM : process.env.CRONO_SHEET_GID || "950408111";
-  const url = (lista === "premium" ? process.env.CRONO_PREMIUM_CSV_URL : process.env.CRONO_CSV_URL)
-    || `https://docs.google.com/spreadsheets/d/${PLANILHA}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
-  const res = await fetch(url, { cache: "no-store", redirect: "follow" });
-  const txt = await res.text();
-  if (!res.ok || /^\s*<(!doctype|html)/i.test(txt)) {
-    throw new Error("Não consegui ler a planilha do cronograma. Em Compartilhar, deixe \"Qualquer pessoa com o link: Leitor\".");
+async function baixarCsv(lista: Lista): Promise<{ txt: string; fonte: string; aviso?: string }> {
+  const f = FONTES[lista];
+  const url = f.url || `https://docs.google.com/spreadsheets/d/${f.planilha}/gviz/tq?tqx=out:csv&gid=${f.gid}`;
+  try {
+    const res = await fetch(url, { cache: "no-store", redirect: "follow" });
+    const txt = await res.text();
+    if (!res.ok || /^\s*<(!doctype|html)/i.test(txt)) throw new Error(ERRO_ACESSO);
+    return { txt, fonte: f.nome };
+  } catch (e) {
+    if (lista !== "premium") throw e;
+    return {
+      txt: CSV_PREMIUM,
+      fonte: "cópia salva no site (Cronograma Premium)",
+      aviso: "A planilha Premium não está compartilhada: mostrando a cópia salva no site. Em Compartilhar, deixe \"Qualquer pessoa com o link: Leitor\" para o painel ler ao vivo.",
+    };
   }
-  return txt;
 }
 
-export async function carregarCronograma(lista: Lista = "geral"): Promise<Disparo[]> {
-  const linhas = parseCsv(await baixarCsv(lista));
+export async function carregarCronograma(lista: Lista = "pool"): Promise<{ disparos: Disparo[]; fonte: string; aviso?: string }> {
+  const { txt, fonte, aviso } = await baixarCsv(lista);
+  return { disparos: montar(txt, lista), fonte, aviso };
+}
+
+function montar(txt: string, lista: Lista): Disparo[] {
+  const linhas = parseCsv(txt);
   if (linhas.length < 2) return [];
   const head = linhas[0].map(norm);
   const col = (re: RegExp) => head.findIndex((h) => re.test(h));
@@ -94,7 +116,8 @@ export async function carregarCronograma(lista: Lista = "geral"): Promise<Dispar
       const msg = get(r, c.mensagem);
       const [codigo, ...resto] = msg.split("·").map((x) => x.trim());
       // Mesmo formato de id da versão anterior (data-base-mN), para manter os checks já marcados.
-      let id = `${data}-${base.replace(/\s+/g, "").toLowerCase()}-${(codigo || "msg").toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+      // Premium ganha prefixo próprio para nunca misturar o check com o do Pool.
+      let id = `${lista === "premium" ? "premium:" : ""}${data}-${base.replace(/\s+/g, "").toLowerCase()}-${(codigo || "msg").toLowerCase().replace(/[^a-z0-9]/g, "")}`;
       const n = (usados.get(id) ?? 0) + 1;
       usados.set(id, n);
       if (n > 1) id += `-${n}`;

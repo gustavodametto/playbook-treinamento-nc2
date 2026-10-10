@@ -5,17 +5,23 @@ import type { Dados } from "@/lib/analise";
 import type { Disparo } from "@/lib/cronograma";
 import WhatsAppPreview from "./WhatsAppPreview";
 
-type Aba = "painel" | "respostas" | "sintese" | "cronograma" | "premium";
+type Aba = "painel" | "respostas" | "sintese" | "cronograma";
 type Envio = { enviado: boolean; em: string | null; qtd: number | null };
 type Envios = Record<string, Envio>;
+type Lista = "pool" | "premium";
+type Fonte = { disparos: Disparo[] | null; erro: string | null; fonte: string; aviso: string | null };
 
 const ABAS: { id: Aba; nome: string }[] = [
   { id: "painel", nome: "Painel" },
   { id: "respostas", nome: "Respostas" },
   { id: "sintese", nome: "Síntese das dificuldades" },
   { id: "cronograma", nome: "Cronograma de disparos" },
-  { id: "premium", nome: "Cronograma Premium" },
 ];
+const LISTAS: { id: Lista; nome: string }[] = [
+  { id: "pool", nome: "Pool" },
+  { id: "premium", nome: "Premium" },
+];
+const VAZIO: Fonte = { disparos: null, erro: null, fonte: "", aviso: null };
 const POLL_MS = 5_000;
 const LS_KEY = "treinamento-nc2:envios";
 
@@ -32,18 +38,18 @@ export default function Playbook() {
   const [erro, setErro] = useState<string | null>(null);
   const [envios, setEnvios] = useState<Envios>({});
   const [compartilhado, setCompartilhado] = useState(false);
-  const [cronograma, setCronograma] = useState<Disparo[] | null>(null);
-  const [erroCrono, setErroCrono] = useState<string | null>(null);
-  const [premium, setPremium] = useState<Disparo[] | null>(null);
-  const [erroPremium, setErroPremium] = useState<string | null>(null);
-  const [fontePremium, setFontePremium] = useState("");
+  const [fontes, setFontes] = useState<Record<Lista, Fonte>>({ pool: VAZIO, premium: VAZIO });
+  const [lista, setLista] = useState<Lista>("pool");
   const editando = useRef(false); // não sobrescreve o campo enquanto a pessoa digita
+  const migrado = useRef(false);
 
   useEffect(() => {
-    const h = window.location.hash.replace("#", "") as Aba;
-    if (ABAS.some((a) => a.id === h)) setAba(h);
+    const h = window.location.hash.replace("#", "");
+    if (h === "premium") { setAba("cronograma"); setLista("premium"); return; }
+    if (ABAS.some((a) => a.id === h)) setAba(h as Aba);
   }, []);
   const trocar = (a: Aba) => { setAba(a); window.history.replaceState(null, "", `#${a}`); };
+  const trocarLista = (l: Lista) => { setLista(l); window.history.replaceState(null, "", l === "premium" ? "#premium" : "#cronograma"); };
 
   const carregar = useCallback(async () => {
     try {
@@ -59,33 +65,41 @@ export default function Playbook() {
     }
   }, []);
 
+  // Carrega Pool e Premium; cada um guarda seus disparos, a fonte e um aviso (ex.: planilha Premium sem acesso).
   const carregarCrono = useCallback(async () => {
-    try {
-      const r = await fetch("/api/cronograma", { cache: "no-store" });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.erro || "Falha ao carregar o cronograma");
-      setCronograma(j.disparos); setErroCrono(null);
-    } catch (e) {
-      setErroCrono((e as Error).message);
-    }
-  }, []);
-
-  const carregarPremium = useCallback(async () => {
-    try {
-      const r = await fetch("/api/cronograma?lista=premium", { cache: "no-store" });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.erro || "Falha ao carregar o cronograma Premium");
-      setPremium(j.disparos); setErroPremium(null); setFontePremium(j.fonte || "");
-    } catch (e) {
-      setErroPremium((e as Error).message);
-    }
+    await Promise.all(LISTAS.map(async ({ id }) => {
+      try {
+        const r = await fetch(`/api/cronograma?lista=${id}`, { cache: "no-store" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.erro || "Falha ao carregar o cronograma");
+        setFontes((f) => ({ ...f, [id]: { disparos: j.disparos, erro: null, fonte: j.fonte || "", aviso: j.aviso || null } }));
+      } catch (e) {
+        setFontes((f) => ({ ...f, [id]: { ...f[id], erro: (e as Error).message } }));
+      }
+    }));
   }, []);
 
   const carregarEnvios = useCallback(async () => {
     try {
       const r = await fetch("/api/envios", { cache: "no-store" });
       const j = await r.json();
-      if (j.compartilhado) { setCompartilhado(true); if (!editando.current) setEnvios(j.envios); return; }
+      if (j.compartilhado) {
+        setCompartilhado(true);
+        // Recupera o que foi marcado antes do banco existir: estava só neste navegador e não aparecia mais.
+        if (!migrado.current) {
+          migrado.current = true;
+          try {
+            const local: Envios = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+            const faltando = Object.entries(local).filter(([id, e]) => !j.envios[id] && (e.enviado || e.qtd !== null));
+            for (const [id, e] of faltando) {
+              await fetch("/api/envios", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, ...e }) });
+              j.envios[id] = e;
+            }
+          } catch {}
+        }
+        if (!editando.current) setEnvios(j.envios);
+        return;
+      }
     } catch {}
     setCompartilhado(false);
     if (!editando.current) { try { setEnvios(JSON.parse(localStorage.getItem(LS_KEY) || "{}")); } catch {} }
@@ -93,13 +107,13 @@ export default function Playbook() {
 
   // Tempo real: consulta a cada 5s enquanto a aba está visível e atualiza na hora ao voltar para ela.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); carregarCrono(); carregarPremium(); } };
-    carregar(); carregarEnvios(); carregarCrono(); carregarPremium();
+    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); carregarCrono(); } };
+    carregar(); carregarEnvios(); carregarCrono();
     const t = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("focus", tick);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); window.removeEventListener("focus", tick); };
-  }, [carregar, carregarEnvios, carregarCrono, carregarPremium]);
+  }, [carregar, carregarEnvios, carregarCrono]);
 
   const persistir = async (id: string, e: Envio, todos: Envios) => {
     if (compartilhado) {
@@ -119,14 +133,17 @@ export default function Playbook() {
     if (gravar) persistir(id, novo, todos);
   };
 
-  const feitos = (cronograma ?? []).filter((c) => envios[c.id]?.enviado || enviadoNaPlanilha(c)).length;
+  const contagem = (l: Lista) => {
+    const d = fontes[l].disparos;
+    return d ? `${d.filter((c) => envios[c.id]?.enviado || enviadoNaPlanilha(c)).length}/${d.length}` : "";
+  };
   const badge: Record<Aba, string> = {
     painel: dados ? String(dados.metricas.inscritos) : "",
     respostas: dados ? String(dados.metricas.respostasBrutas) : "",
     sintese: dados ? String(dados.metricas.comDificuldade) : "",
-    cronograma: cronograma ? `${feitos}/${cronograma.length}` : "",
-    premium: premium ? `${premium.filter((c) => envios[c.id]?.enviado || enviadoNaPlanilha(c)).length}/${premium.length}` : "",
+    cronograma: contagem("pool"),
   };
+  const atualFonte = fontes[lista];
   const atual = ABAS.find((a) => a.id === aba)!;
 
   return (
@@ -153,7 +170,7 @@ export default function Playbook() {
             <span className={`dot ${erro ? "off" : ""}`} />
             {dados ? `Ao vivo · atualizado às ${new Date(dados.atualizadoEm).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : "Carregando..."}
           </div>
-          <button onClick={() => { carregar(); carregarEnvios(); carregarCrono(); carregarPremium(); }}>Atualizar agora</button>
+          <button onClick={() => { carregar(); carregarEnvios(); carregarCrono(); }}>Atualizar agora</button>
           <div className="sub">Quinta-feira, 15/10/2026, às 19h</div>
         </div>
       </aside>
@@ -164,15 +181,22 @@ export default function Playbook() {
       </header>
 
       {erro && <div className="err">{erro}</div>}
-      {aba === "cronograma" && erroCrono && <div className="err">{erroCrono}</div>}
-      {aba === "premium" && erroPremium && <div className="err">{erroPremium}</div>}
+      {aba === "cronograma" && atualFonte.erro && <div className="err">{atualFonte.erro}</div>}
+      {aba === "cronograma" && atualFonte.aviso && <div className="note">{atualFonte.aviso}</div>}
       {dados?.demo && <div className="note">Modo demonstração: dados fictícios (DEMO=1). Remova a variável para ler a planilha real.</div>}
 
       {aba === "cronograma" ? (
-        <Cronograma lista={cronograma} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado} />
-      ) : aba === "premium" ? (
-        <Cronograma lista={premium} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado}
-          fonte={fontePremium === "embutido" ? "Cronograma Premium v2 (embutido no site até a aba Premium entrar na planilha)" : "Cronograma Treinamento NC2 Spot · aba Premium"} />
+        <>
+          <div className="chips listas" role="tablist" aria-label="Qual cronograma">
+            {LISTAS.map((l) => (
+              <button key={l.id} role="tab" aria-selected={lista === l.id} className={lista === l.id ? "on" : ""} onClick={() => trocarLista(l.id)}>
+                {l.nome} {contagem(l.id) && <span className="cont">{contagem(l.id)}</span>}
+              </button>
+            ))}
+          </div>
+          <Cronograma key={lista} lista={atualFonte.disparos} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado}
+            fonte={atualFonte.fonte || (lista === "premium" ? "Cronograma Premium" : "Cronograma Pool")} />
+        </>
       ) : !dados ? (
         <div className="empty">Carregando respostas...</div>
       ) : aba === "painel" ? (
