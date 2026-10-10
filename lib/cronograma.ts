@@ -40,11 +40,13 @@ const comLinks = (t: string) => t.replaceAll("[LINK DE CONFIRMAÇÃO DO INVESTID
 
 // Artes em PNG em public/artes. Escolhe pelo assunto da mensagem (vale para o layout de 5 ou de 6 mensagens);
 // sem assunto reconhecido, usa a arte do mesmo número (m1.png ... m6.png).
-const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6"]);
+const ARTES = new Set(["m1", "m2", "m3", "m4", "m5", "m6", "m7"]);
 function arteDe(codigo: string, nome: string): string | null {
   const n = norm(nome);
   if (/entrando no ar|e hoje/.test(n)) return "/artes/m6.png";
   if (/sem entrada/.test(n)) return "/artes/m5.png";
+  if (/duvidas/.test(n)) return "/artes/m7.png"; // card "Investidor descansa. Spot fatura."
+  if (/vespera|4 motivos/.test(n)) return "/artes/m4.png";
   const k = codigo.toLowerCase().replace(/^p(?=\d)/, "m"); // P1..P5 (Premium) usam as artes M1..M5
   return ARTES.has(k) ? `/artes/${k}.png` : null;
 }
