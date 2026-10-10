@@ -5,7 +5,7 @@ import type { Dados } from "@/lib/analise";
 import type { Disparo } from "@/lib/cronograma";
 import WhatsAppPreview from "./WhatsAppPreview";
 
-type Aba = "painel" | "respostas" | "sintese" | "cronograma";
+type Aba = "painel" | "respostas" | "sintese" | "cronograma" | "premium";
 type Envio = { enviado: boolean; em: string | null; qtd: number | null };
 type Envios = Record<string, Envio>;
 
@@ -14,6 +14,7 @@ const ABAS: { id: Aba; nome: string }[] = [
   { id: "respostas", nome: "Respostas" },
   { id: "sintese", nome: "Síntese das dificuldades" },
   { id: "cronograma", nome: "Cronograma de disparos" },
+  { id: "premium", nome: "Cronograma Premium" },
 ];
 const POLL_MS = 5_000;
 const LS_KEY = "treinamento-nc2:envios";
@@ -33,6 +34,9 @@ export default function Playbook() {
   const [compartilhado, setCompartilhado] = useState(false);
   const [cronograma, setCronograma] = useState<Disparo[] | null>(null);
   const [erroCrono, setErroCrono] = useState<string | null>(null);
+  const [premium, setPremium] = useState<Disparo[] | null>(null);
+  const [erroPremium, setErroPremium] = useState<string | null>(null);
+  const [fontePremium, setFontePremium] = useState("");
   const editando = useRef(false); // não sobrescreve o campo enquanto a pessoa digita
 
   useEffect(() => {
@@ -66,6 +70,17 @@ export default function Playbook() {
     }
   }, []);
 
+  const carregarPremium = useCallback(async () => {
+    try {
+      const r = await fetch("/api/cronograma?lista=premium", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.erro || "Falha ao carregar o cronograma Premium");
+      setPremium(j.disparos); setErroPremium(null); setFontePremium(j.fonte || "");
+    } catch (e) {
+      setErroPremium((e as Error).message);
+    }
+  }, []);
+
   const carregarEnvios = useCallback(async () => {
     try {
       const r = await fetch("/api/envios", { cache: "no-store" });
@@ -78,13 +93,13 @@ export default function Playbook() {
 
   // Tempo real: consulta a cada 5s enquanto a aba está visível e atualiza na hora ao voltar para ela.
   useEffect(() => {
-    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); carregarCrono(); } };
-    carregar(); carregarEnvios(); carregarCrono();
+    const tick = () => { if (!document.hidden) { carregar(); carregarEnvios(); carregarCrono(); carregarPremium(); } };
+    carregar(); carregarEnvios(); carregarCrono(); carregarPremium();
     const t = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("focus", tick);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); window.removeEventListener("focus", tick); };
-  }, [carregar, carregarEnvios, carregarCrono]);
+  }, [carregar, carregarEnvios, carregarCrono, carregarPremium]);
 
   const persistir = async (id: string, e: Envio, todos: Envios) => {
     if (compartilhado) {
@@ -110,6 +125,7 @@ export default function Playbook() {
     respostas: dados ? String(dados.metricas.respostasBrutas) : "",
     sintese: dados ? String(dados.metricas.comDificuldade) : "",
     cronograma: cronograma ? `${feitos}/${cronograma.length}` : "",
+    premium: premium ? `${premium.filter((c) => envios[c.id]?.enviado || enviadoNaPlanilha(c)).length}/${premium.length}` : "",
   };
   const atual = ABAS.find((a) => a.id === aba)!;
 
@@ -137,7 +153,7 @@ export default function Playbook() {
             <span className={`dot ${erro ? "off" : ""}`} />
             {dados ? `Ao vivo · atualizado às ${new Date(dados.atualizadoEm).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : "Carregando..."}
           </div>
-          <button onClick={() => { carregar(); carregarEnvios(); carregarCrono(); }}>Atualizar agora</button>
+          <button onClick={() => { carregar(); carregarEnvios(); carregarCrono(); carregarPremium(); }}>Atualizar agora</button>
           <div className="sub">Quinta-feira, 15/10/2026, às 19h</div>
         </div>
       </aside>
@@ -149,10 +165,14 @@ export default function Playbook() {
 
       {erro && <div className="err">{erro}</div>}
       {aba === "cronograma" && erroCrono && <div className="err">{erroCrono}</div>}
+      {aba === "premium" && erroPremium && <div className="err">{erroPremium}</div>}
       {dados?.demo && <div className="note">Modo demonstração: dados fictícios (DEMO=1). Remova a variável para ler a planilha real.</div>}
 
       {aba === "cronograma" ? (
         <Cronograma lista={cronograma} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado} />
+      ) : aba === "premium" ? (
+        <Cronograma lista={premium} envios={envios} atualizar={atualizar} persistir={persistir} editando={editando} compartilhado={compartilhado}
+          fonte={fontePremium === "embutido" ? "Cronograma Premium v2 (embutido no site até a aba Premium entrar na planilha)" : "Cronograma Treinamento NC2 Spot · aba Premium"} />
       ) : !dados ? (
         <div className="empty">Carregando respostas...</div>
       ) : aba === "painel" ? (
@@ -454,7 +474,8 @@ const SEP_BLOCO = "━━━━━━━━━━━━";
 const blocoInvestidor = (t: string) => (t.includes(SEP_BLOCO) ? t.split(SEP_BLOCO).slice(1).join(SEP_BLOCO).trim() : null);
 const fmtNum = (n: number | null) => (n === null ? "-" : n.toLocaleString("pt-BR"));
 
-function Cronograma({ lista, envios, atualizar, persistir, editando, compartilhado }: {
+function Cronograma({ lista, envios, atualizar, persistir, editando, compartilhado, fonte = "Cronograma Treinamento NC2 Spot" }: {
+  fonte?: string;
   lista: Disp[] | null;
   envios: Envios;
   atualizar: (id: string, patch: Partial<Envio>, gravar?: boolean) => void;
@@ -505,7 +526,7 @@ function Cronograma({ lista, envios, atualizar, persistir, editando, compartilha
         <Kpi n={pessoas.toLocaleString("pt-BR")} l="Pessoas que receberam" s="soma dos disparos preenchidos" />
         <Kpi n={proximo ? `${fmtDia(proximo.data)} · ${proximo.horario}` : "-"} l="Próximo disparo" s={proximo ? `${proximo.mensagem} · ${proximo.base}` : "nenhum pendente"} />
       </div>
-      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas ao vivo da planilha <b>Cronograma Treinamento NC2 Spot</b>. Mudou o texto lá, muda aqui em segundos.</div>
+      <div className="sub" style={{ marginTop: 10 }}>Mensagens lidas de <b>{fonte}</b>. Mudou o texto lá, muda aqui em segundos.</div>
 
       {porDia.map(([data, itens]) => (
         <div key={data}>

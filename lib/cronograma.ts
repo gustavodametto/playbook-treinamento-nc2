@@ -1,4 +1,5 @@
 import { parseCsv } from "./csv";
+import { CSV_PREMIUM } from "@/data/cronograma-premium";
 
 // Lê ao vivo a aba de cronograma da planilha "Cronograma Treinamento NC2 Spot - 15102026".
 // Colunas achadas pelo cabeçalho: reordenar ou incluir colunas na planilha não quebra.
@@ -44,22 +45,35 @@ function arteDe(codigo: string, nome: string): string | null {
   const n = norm(nome);
   if (/entrando no ar|e hoje/.test(n)) return "/artes/m6.png";
   if (/sem entrada/.test(n)) return "/artes/m5.png";
-  const k = codigo.toLowerCase();
+  const k = codigo.toLowerCase().replace(/^p(?=\d)/, "m"); // P1..P5 (Premium) usam as artes M1..M5
   return ARTES.has(k) ? `/artes/${k}.png` : null;
 }
 
-export async function carregarCronograma(): Promise<Disparo[]> {
-  // Planilha "Cronograma Treinamento NC2 Spot - 15102026", aba gid 950408111 (rodada de negócios).
-  const id = process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k";
-  const gid = process.env.CRONO_SHEET_GID || "950408111";
-  const url = process.env.CRONO_CSV_URL || `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
+export type Lista = "geral" | "premium";
+
+// Planilha "Cronograma Treinamento NC2 Spot - 15102026". Geral = aba gid 950408111 (rodada de negócios).
+// Premium = aba definida em CRONO_PREMIUM_GID; enquanto não existir, usa o CSV embutido em data/cronograma-premium.ts.
+const PLANILHA = process.env.CRONO_SHEET_ID || "1nyVoQuxGqJIRwVZ1jXXeLx3-NXuvHdEgx7_nyF_fm7k";
+const GID_PREMIUM = process.env.CRONO_PREMIUM_GID || "";
+
+export const fonteDe = (lista: Lista) =>
+  lista === "premium" && !GID_PREMIUM && !process.env.CRONO_PREMIUM_CSV_URL ? "embutido" : "planilha";
+
+async function baixarCsv(lista: Lista): Promise<string> {
+  if (lista === "premium" && !GID_PREMIUM && !process.env.CRONO_PREMIUM_CSV_URL) return CSV_PREMIUM;
+  const gid = lista === "premium" ? GID_PREMIUM : process.env.CRONO_SHEET_GID || "950408111";
+  const url = (lista === "premium" ? process.env.CRONO_PREMIUM_CSV_URL : process.env.CRONO_CSV_URL)
+    || `https://docs.google.com/spreadsheets/d/${PLANILHA}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const res = await fetch(url, { cache: "no-store", redirect: "follow" });
   const txt = await res.text();
   if (!res.ok || /^\s*<(!doctype|html)/i.test(txt)) {
     throw new Error("Não consegui ler a planilha do cronograma. Em Compartilhar, deixe \"Qualquer pessoa com o link: Leitor\".");
   }
+  return txt;
+}
 
-  const linhas = parseCsv(txt);
+export async function carregarCronograma(lista: Lista = "geral"): Promise<Disparo[]> {
+  const linhas = parseCsv(await baixarCsv(lista));
   if (linhas.length < 2) return [];
   const head = linhas[0].map(norm);
   const col = (re: RegExp) => head.findIndex((h) => re.test(h));
