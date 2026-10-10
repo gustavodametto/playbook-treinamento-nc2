@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="31" fill="#ffffff"/>
+  <!-- casinha da Seazone: telhado, chaminé à direita e o "o" vazado dentro -->
+  <path d="M15 30.5 L32 15.5 L49 30.5 V45 Q49 49 45 49 H19 Q15 49 15 45 Z" fill="#1f4fe0"/>
+  <rect x="40" y="14" width="6.5" height="16" rx="1.5" fill="#1f4fe0"/>
+  <circle cx="32" cy="36.5" r="6.8" fill="none" stroke="#ffffff" stroke-width="4.6"/>
+</svg>
