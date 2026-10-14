@@ -246,20 +246,35 @@ function Contagem() {
   );
 }
 
-function Kpi({ n, l, s }: { n: number | string; l: string; s?: string }) {
+type R = Dados["respostas"][number];
+// O que um clique no Painel abre: título, explicação e o filtro dos inscritos que formam aquele número.
+type Detalhe = { titulo: string; sub?: string; filtro: (r: R) => boolean; dificuldade?: boolean };
+type Abrir = (d: Detalhe) => void;
+
+// Todo card/linha clicável do Painel usa estas props: abre no clique e no Enter/Espaço.
+const clicavel = (abrir: () => void, rotulo: string) => ({
+  role: "button" as const,
+  tabIndex: 0,
+  "aria-label": rotulo,
+  onClick: (e: React.MouseEvent) => { e.stopPropagation(); abrir(); },
+  onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(); } },
+});
+
+function Kpi({ n, l, s, onAbrir }: { n: number | string; l: string; s?: string; onAbrir?: () => void }) {
   return (
-    <div className="card kpi">
+    <div className={`card kpi ${onAbrir ? "clicavel" : ""}`} {...(onAbrir ? clicavel(onAbrir, `Ver detalhe: ${l}`) : {})}>
       <div className="l">{l}</div>
       <div className="n">{n}</div>
       {s && <div className="s">{s}</div>}
+      {onAbrir && <div className="ver">Ver quem são →</div>}
     </div>
   );
 }
 
-function Barra({ nome, qtd, total, ok }: { nome: string; qtd: number; total: number; ok?: boolean }) {
+function Barra({ nome, qtd, total, ok, onAbrir }: { nome: string; qtd: number; total: number; ok?: boolean; onAbrir?: () => void }) {
   const pct = total ? Math.round((qtd / total) * 100) : 0;
   return (
-    <div className="row">
+    <div className={`row ${onAbrir ? "clicavel" : ""}`} {...(onAbrir ? clicavel(onAbrir, `Ver inscrições de ${nome}`) : {})}>
       <div className="name">{nome}</div>
       <div className={`track ${ok ? "ok" : ""}`}><i style={{ width: `${pct}%` }} /></div>
       <div className="val">{qtd} ({pct}%)</div>
@@ -267,25 +282,74 @@ function Barra({ nome, qtd, total, ok }: { nome: string; qtd: number; total: num
   );
 }
 
-// Barra 100% dividida em Sim / Não / Sem resposta, com legenda e números.
-function Divisao({ titulo, sim, nao, total, rotSim, rotNao }: { titulo: string; sim: number; nao: number; total: number; rotSim: string; rotNao: string }) {
+// Barra 100% dividida em Sim / Não / Sem resposta; cada pedaço e cada item da legenda abre a lista.
+function Divisao({ titulo, sim, nao, total, rotSim, rotNao, onAbrir }: {
+  titulo: string; sim: number; nao: number; total: number; rotSim: string; rotNao: string;
+  onAbrir?: (k: "sim" | "nao" | "sem", rot: string) => void;
+}) {
   const sem = Math.max(0, total - sim - nao);
   const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
-  const partes = [
+  const partes = ([
     { k: "sim", n: sim, rot: rotSim },
     { k: "nao", n: nao, rot: rotNao },
     { k: "sem", n: sem, rot: "Sem resposta" },
-  ].filter((p) => p.n > 0);
+  ] as const).filter((p) => p.n > 0);
+  const abre = (k: "sim" | "nao" | "sem", rot: string) => (onAbrir ? clicavel(() => onAbrir(k, rot), `Ver: ${rot}`) : {});
   return (
     <div className="divisao">
       <div className="divisao-t">{titulo}</div>
-      <div className="stack" role="img" aria-label={partes.map((p) => `${p.rot}: ${p.n}`).join(", ")}>
-        {total ? partes.map((p) => <i key={p.k} className={p.k} style={{ flexGrow: p.n }} title={`${p.rot}: ${p.n} (${pct(p.n)}%)`} />) : <i className="vazio" />}
+      <div className="stack">
+        {total ? partes.map((p) => <i key={p.k} className={`${p.k} ${onAbrir ? "clicavel" : ""}`} style={{ flexGrow: p.n }} title={`${p.rot}: ${p.n} (${pct(p.n)}%)`} {...abre(p.k, p.rot)} />) : <i className="vazio" />}
       </div>
       <div className="legenda">
-        <span><i className="sim" />{rotSim} <b>{sim}</b> <em>{pct(sim)}%</em></span>
-        <span><i className="nao" />{rotNao} <b>{nao}</b> <em>{pct(nao)}%</em></span>
-        {sem > 0 && <span><i className="sem" />Sem resposta <b>{sem}</b></span>}
+        <span className={onAbrir ? "clicavel" : ""} {...abre("sim", rotSim)}><i className="sim" />{rotSim} <b>{sim}</b> <em>{pct(sim)}%</em></span>
+        <span className={onAbrir ? "clicavel" : ""} {...abre("nao", rotNao)}><i className="nao" />{rotNao} <b>{nao}</b> <em>{pct(nao)}%</em></span>
+        {sem > 0 && <span className={onAbrir ? "clicavel" : ""} {...abre("sem", "Sem resposta")}><i className="sem" />Sem resposta <b>{sem}</b></span>}
+      </div>
+    </div>
+  );
+}
+
+// Janela com a lista de inscritos do card clicado; exporta exatamente essa lista.
+function JanelaDetalhe({ det, lista, fechar }: { det: Detalhe; lista: R[]; fechar: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && fechar();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [fechar]);
+  const sn = (v: boolean | null) => (v === null ? "-" : v ? "Sim" : "Não");
+  return (
+    <div className="det-overlay" onClick={fechar} role="dialog" aria-modal="true" aria-label={det.titulo}>
+      <div className="det-box" onClick={(e) => e.stopPropagation()}>
+        <div className="card-head">
+          <div>
+            <h2 style={{ margin: 0 }}>{det.titulo} <span className="tag">{lista.length}</span></h2>
+            {det.sub && <div className="sub">{det.sub}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="primary" onClick={() => exportarRespostas(lista)} disabled={!lista.length}>Exportar</button>
+            <button onClick={fechar}>Fechar</button>
+          </div>
+        </div>
+        <div className="tablewrap">
+          <table>
+            <thead><tr><th>Data da inscrição</th><th>Nome</th><th>WhatsApp</th><th>Farmer</th><th>Já vendeu</th><th>Cliente para indicar</th>{det.dificuldade && <th>Maior dificuldade</th>}</tr></thead>
+            <tbody>
+              {lista.map((r, i) => (
+                <tr key={i}>
+                  <td className="nowrap">{fmtDataHora(r.ts)}</td>
+                  <td><b>{r.nome}</b></td>
+                  <td className="nowrap">{r.whatsapp}</td>
+                  <td>{r.farmer ? r.farmer : <span className="tag">não encontrado</span>}</td>
+                  <td><span className={`tag ${r.vendeu ? "sim" : ""}`}>{sn(r.vendeu)}</span></td>
+                  <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
+                  {det.dificuldade && <td>{r.dificuldade}</td>}
+                </tr>
+              ))}
+              {!lista.length && <tr><td colSpan={7} className="empty">Ninguém por aqui ainda.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -294,15 +358,22 @@ function Divisao({ titulo, sim, nao, total, rotSim, rotNao }: { titulo: string; 
 function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
   const m = d.metricas;
   const agora = useAgora();
+  const [det, setDet] = useState<Detalhe | null>(null);
+  const abrir: Abrir = (x) => setDet(x);
   const pctInv = m.inscritos ? Math.round((m.comInvestidor / m.inscritos) * 100) : 0;
-  const hoje = agora ? m.porDia.find((x) => x.dia === diaBRT(agora))?.qtd ?? 0 : 0;
+  const hojeDia = agora ? diaBRT(agora) : "";
+  const hoje = agora ? m.porDia.find((x) => x.dia === hojeDia)?.qtd ?? 0 : 0;
   const maxDia = Math.max(1, ...m.porDia.map((x) => x.qtd));
   const unicos = d.respostas.filter((r) => !r.duplicado);
+  const diaDe = (r: R) => (r.ts ? diaBRT(new Date(r.ts).getTime()) : "");
   const porFarmer = Object.entries(unicos.reduce<Record<string, number>>((acc, r) => {
     const f = farmerTxt(r); acc[f] = (acc[f] ?? 0) + 1; return acc;
   }, {})).sort((a, b) => (a[0] === SEM_FARMER ? 1 : b[0] === SEM_FARMER ? -1 : b[1] - a[1]));
   const ultima = unicos[0]?.ts ?? null;
   const [ultData, ultHora] = ultima ? fmtDataHora(ultima).split(" às ") : ["", ""];
+  const lista = det ? unicos.filter(det.filtro) : [];
+  const porSimNao = (campo: "vendeu" | "investidor", titulo: string) => (k: "sim" | "nao" | "sem", rot: string) =>
+    abrir({ titulo: `${titulo}: ${rot}`, filtro: (r) => (k === "sim" ? r[campo] === true : k === "nao" ? r[campo] === false : r[campo] === null) });
 
   return (
     <>
@@ -316,27 +387,35 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
       </section>
 
       <div className="hero-kpis">
-        <div className="card big">
+        <div className="card big clicavel" {...clicavel(() => abrir({ titulo: "Inscritos", sub: "WhatsApp únicos; repetidos ficam de fora", filtro: () => true }), "Ver todos os inscritos")}>
           <div className="big-l">Inscritos</div>
           <div className="big-n">{m.inscritos}</div>
           <div className="big-s">
-            {hoje ? <span className="pill">+{hoje} hoje</span> : <span className="pill neutro">nenhum hoje ainda</span>}
+            {hoje
+              ? <span className="pill clicavel" {...clicavel(() => abrir({ titulo: "Inscritos hoje", filtro: (r) => diaDe(r) === hojeDia }), "Ver inscritos de hoje")}>+{hoje} hoje</span>
+              : <span className="pill neutro">nenhum hoje ainda</span>}
             WhatsApp únicos{m.duplicados ? ` · ${m.duplicados} repetido(s) fora da conta` : ""}
           </div>
+          <div className="ver">Ver quem são →</div>
         </div>
-        <div className="card big destaque">
+        <div className="card big destaque clicavel" {...clicavel(() => abrir({ titulo: "Têm cliente para indicar", filtro: (r) => r.investidor === true }), "Ver quem tem cliente para indicar")}>
           <div className="big-l">Têm cliente para indicar</div>
           <div className="big-n">{m.comInvestidor}<small>{pctInv}% dos inscritos</small></div>
           <div className="meter" role="img" aria-label={`${pctInv}% dos inscritos têm cliente para indicar`}><i style={{ width: `${pctInv}%` }} /></div>
           <div className="big-s">{m.semInvestidor} ainda sem cliente em mente</div>
+          <div className="ver">Ver quem são →</div>
         </div>
       </div>
 
       <div className="grid kpis">
-        <Kpi n={m.jaVenderam} l="Já venderam Spot" s={m.inscritos ? `${Math.round((m.jaVenderam / m.inscritos) * 100)}% dos inscritos` : undefined} />
-        <Kpi n={m.nuncaVenderam} l="Nunca venderam" s="oportunidade de capacitar" />
-        <Kpi n={m.comDificuldade} l="Contaram a maior dificuldade" s="veja a aba Síntese" />
-        <Kpi n={ultHora || "-"} l="Última inscrição" s={ultData || "aguardando a primeira"} />
+        <Kpi n={m.jaVenderam} l="Já venderam Spot" s={m.inscritos ? `${Math.round((m.jaVenderam / m.inscritos) * 100)}% dos inscritos` : undefined}
+          onAbrir={() => abrir({ titulo: "Já venderam Spot", filtro: (r) => r.vendeu === true })} />
+        <Kpi n={m.nuncaVenderam} l="Nunca venderam" s="oportunidade de capacitar"
+          onAbrir={() => abrir({ titulo: "Nunca venderam Spot", sub: "Oportunidade de capacitar", filtro: (r) => r.vendeu === false })} />
+        <Kpi n={m.comDificuldade} l="Contaram a maior dificuldade" s="veja a aba Síntese"
+          onAbrir={() => abrir({ titulo: "Contaram a maior dificuldade", filtro: (r) => !!r.dificuldade.trim(), dificuldade: true })} />
+        <Kpi n={ultHora || "-"} l="Última inscrição" s={ultData || "aguardando a primeira"}
+          onAbrir={ultima ? () => abrir({ titulo: "Últimas inscrições", sub: "Da mais recente para a mais antiga", filtro: () => true }) : undefined} />
       </div>
 
       <div className="grid two">
@@ -346,9 +425,10 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
             <div className="bars">
               {m.porDia.map((x) => {
                 const dt = new Date(`${x.dia}T12:00:00-03:00`);
+                const rot = `${fmtDia(x.dia)} (${SEMANA[dt.getUTCDay()]})`;
                 return (
-                  <div className="bar" key={x.dia} tabIndex={0}>
-                    <span className="tip">{fmtDia(x.dia)} ({SEMANA[dt.getUTCDay()]}): <b>{x.qtd}</b> inscrição(ões)</span>
+                  <div className="bar clicavel" key={x.dia} {...clicavel(() => abrir({ titulo: `Inscrições de ${rot}`, filtro: (r) => diaDe(r) === x.dia }), `Ver inscrições de ${rot}`)}>
+                    <span className="tip">{rot}: <b>{x.qtd}</b> inscrição(ões)</span>
                     <b>{x.qtd}</b>
                     <i style={{ height: `${(x.qtd / maxDia) * 100}%` }} />
                     <span>{fmtDia(x.dia)}</span>
@@ -360,15 +440,19 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
         </div>
         <div className="card">
           <h2>Perfil dos inscritos</h2>
-          <Divisao titulo="Têm cliente para indicar?" sim={m.comInvestidor} nao={m.semInvestidor} total={m.inscritos} rotSim="Tem cliente" rotNao="Ainda não" />
-          <Divisao titulo="Já venderam Spot Seazone?" sim={m.jaVenderam} nao={m.nuncaVenderam} total={m.inscritos} rotSim="Já vendeu" rotNao="Nunca vendeu" />
+          <Divisao titulo="Têm cliente para indicar?" sim={m.comInvestidor} nao={m.semInvestidor} total={m.inscritos} rotSim="Tem cliente" rotNao="Ainda não"
+            onAbrir={porSimNao("investidor", "Cliente para indicar")} />
+          <Divisao titulo="Já venderam Spot Seazone?" sim={m.jaVenderam} nao={m.nuncaVenderam} total={m.inscritos} rotSim="Já vendeu" rotNao="Nunca vendeu"
+            onAbrir={porSimNao("vendeu", "Já vendeu Spot")} />
         </div>
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
         <h2>Inscritos por farmer</h2>
-        {porFarmer.length ? porFarmer.map(([f, n]) => <Barra key={f} nome={f} qtd={n} total={unicos.length} ok={f !== SEM_FARMER} />)
-          : <div className="empty">Ainda sem inscrições.</div>}
+        {porFarmer.length ? porFarmer.map(([f, n]) => (
+          <Barra key={f} nome={f} qtd={n} total={unicos.length} ok={f !== SEM_FARMER}
+            onAbrir={() => abrir({ titulo: `Inscrições de ${f}`, sub: f === SEM_FARMER ? "Telefone não encontrado na base de parceiros do Nekt" : "Farmer responsável pela organização", filtro: (r) => farmerTxt(r) === f })} />
+        )) : <div className="empty">Ainda sem inscrições.</div>}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -378,20 +462,23 @@ function Painel({ d, verTodas }: { d: Dados; verTodas: () => void }) {
         </div>
         <div className="tablewrap">
           <table>
-            <thead><tr><th>Data da inscrição</th><th>Nome</th><th>Já vendeu</th><th>Cliente para indicar</th></tr></thead>
+            <thead><tr><th>Data da inscrição</th><th>Nome</th><th>Farmer</th><th>Já vendeu</th><th>Cliente para indicar</th></tr></thead>
             <tbody>
               {unicos.slice(0, 8).map((r, i) => (
-                <tr key={i}>
+                <tr key={i} className="clicavel" {...clicavel(() => abrir({ titulo: r.nome || "Inscrição", sub: "Detalhe da inscrição", filtro: (x) => x.nome === r.nome && x.ts === r.ts && x.whatsapp === r.whatsapp, dificuldade: true }), `Ver inscrição de ${r.nome}`)}>
                   <td className="nowrap">{fmtDataHora(r.ts)}</td><td><b>{r.nome}</b></td>
+                  <td>{r.farmer ? r.farmer : <span className="tag">não encontrado</span>}</td>
                   <td><span className={`tag ${r.vendeu ? "sim" : ""}`}>{r.vendeu === null ? "-" : r.vendeu ? "Sim" : "Não"}</span></td>
                   <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
                 </tr>
               ))}
-              {!unicos.length && <tr><td colSpan={4} className="empty">Nenhuma inscrição ainda. Assim que alguém preencher o Forms, aparece aqui em segundos.</td></tr>}
+              {!unicos.length && <tr><td colSpan={5} className="empty">Nenhuma inscrição ainda. Assim que alguém preencher o Forms, aparece aqui em segundos.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+
+      {det && <JanelaDetalhe det={det} lista={lista} fechar={() => setDet(null)} />}
     </>
   );
 }
@@ -448,7 +535,7 @@ function Respostas({ d }: { d: Dados }) {
                 <td className="nowrap">{fmtDataHora(r.ts)}</td>
                 <td>{r.nome} {r.duplicado && <span className="tag dup">repetido</span>}</td>
                 <td>{r.whatsapp}</td>
-                <td>{r.farmer ? r.farmer : <span className="tag">não encontrado</span>}</td>
+                <td><button className="link-farmer" title="Ver só as inscrições deste farmer" onClick={() => setFarmer(farmerTxt(r))}>{r.farmer ? r.farmer : "não encontrado"}</button></td>
                 <td>{r.vendeu === null ? "-" : r.vendeu ? "Sim" : "Não"}</td>
                 <td><span className={`tag ${r.investidor ? "sim" : ""}`}>{r.investidor === null ? "-" : r.investidor ? "Tem cliente" : "Ainda não"}</span></td>
                 <td>{r.dificuldade}</td>
